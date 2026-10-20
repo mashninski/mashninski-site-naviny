@@ -485,7 +485,7 @@ def test_missing_base_branch_is_an_error():
 # одни и те же карточки через обе копии и требует одинаковый ответ,
 # до буквы: две копии правил не разойдутся молча.
 
-SITE_NAVINY_TS = (Path(os.environ.get("AI_NEWS_SITE_REPO") or publish.ROOT.parent / "mashninski-site")
+SITE_NAVINY_TS = (Path(os.environ.get("AI_NEWS_SITE_REPO") or publish.ROOT.parent / "site")
                   / "src" / "lib" / "naviny.ts")
 
 

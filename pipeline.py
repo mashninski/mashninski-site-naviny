@@ -43,7 +43,7 @@ AI_NEWS_MONTHLY_BUDGET_USD (по умолчанию $28) по оценкам т�
 Ключ — переменная окружения AI_NEWS_ANTHROPIC_KEY (llm.py).
 Орфография карточек — AI_NEWS_ORTHOGRAPHY: narkamauka (по умолчанию) или tarask.
 Языковые ресурсы — из репозитория сайта, путь в AI_NEWS_SITE_REPO,
-по умолчанию ../mashninski-site.
+по умолчанию ../site (папка сайта рядом).
 """
 
 import argparse
@@ -133,7 +133,7 @@ log = logging.getLogger("pipeline")
 # ---------- окружение ----------
 
 def site_repo() -> Path:
-    p = Path(os.environ.get("AI_NEWS_SITE_REPO") or ROOT.parent / "mashninski-site")
+    p = Path(os.environ.get("AI_NEWS_SITE_REPO") or ROOT.parent / "site")
     if not (p / "claude" / "ai-news-glossary.json").exists():
         raise SystemExit(f"нет репозитория сайта с глоссарием: {p} (задай AI_NEWS_SITE_REPO)")
     return p

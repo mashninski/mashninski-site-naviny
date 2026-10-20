@@ -48,7 +48,7 @@ SCHEMA_PATH = ROOT / "schema.sql"
 # Честное имя бота. Под браузер не маскируемся: если источник режет ботов
 # (VentureBeat отдаёт 429 всем, кроме браузеров и известных читалок), он просто
 # пропускается, как любой сломанный фид.
-USER_AGENT = "ai-news-harvester/0.1 (+https://github.com/mashninski/ai-news-harvester)"
+USER_AGENT = "mashninski-site-naviny/0.1 (+https://github.com/mashninski/mashninski-site-naviny)"
 TIMEOUT = 20
 
 SOURCES = [

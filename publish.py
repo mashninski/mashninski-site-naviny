@@ -517,7 +517,7 @@ def make_body(entries: list[Entry], skipped, base: str, when: datetime, edits: l
             label = f" «{md_cell(title)}»" if title else ""
             out.append(f"- `{cid[:12]}`{label} — {'; '.join(reasons)}")
     models = sorted({m for e in entries for m in e.site["models"].values()})
-    out += ["", f"<sub>ai-news-harvester · publish.py · {collect.iso(when)} · "
+    out += ["", f"<sub>mashninski-site-naviny · publish.py · {collect.iso(when)} · "
                 f"мадэлі: {', '.join(models) or '—'}</sub>"]
     body = "\n".join(out) + "\n"
     if len(body) > BODY_LIMIT:
@@ -679,7 +679,7 @@ class GitHub:
         self.repo = repo
         self.s = session or requests.Session()
         self.headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-                        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "ai-news-harvester"}
+                        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "mashninski-site-naviny"}
 
     def call(self, method: str, path: str, body: dict | None = None, missing_ok: bool = False):
         r = self.s.request(method, f"{API}/repos/{self.repo}{path}", headers=self.headers,

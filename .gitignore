@@ -20,3 +20,6 @@ data/eval/
 # Локальные секреты: токен GitHub для publish.py (AI_NEWS_SITE_TOKEN). В Actions —
 # GitHub Secrets, сюда не коммитится никогда
 .env.local
+
+# Локальные инструкции Claude Code: подключают заметки из приватного репозитория сайта
+CLAUDE.local.md
