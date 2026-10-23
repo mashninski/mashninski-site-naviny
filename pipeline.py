@@ -104,7 +104,9 @@ MIN_BODY_ANY = 150          # меньше и докачать нельзя — 
 # OpenAI — с 07.10.2026 (рашэнне аўтара, журнал сайта, «этап 9»): в фиде
 # анонс в 130–150 знаков, меньше MIN_BODY_ANY, и ~4 новости из 10 уходили
 # в failed с «мала тэксту»; robots.txt разрешает всё
-PAGE_FETCH_SOURCES = {"deepmind", "huggingface", "mistral", "openai"}
+# openai-alignment — с 23.10.2026 (аудит полноты ленты, журнал сайта): в фиде
+# alignment.openai.com анонс ~100 знаков, статья на странице; robots.txt нет
+PAGE_FETCH_SOURCES = {"deepmind", "huggingface", "mistral", "openai", "openai-alignment"}
 PAGE_PARAGRAPHS = 12
 
 # Цены на 24.09.2026, $ за миллион токенов (спека, §4). Batch — половина.
@@ -599,7 +601,7 @@ def on_triage(db, res, results, acc):
 # ---------- генерация ----------
 
 def ensure_body(db, m: dict) -> str | None:
-    """Если в фиде мало текста — одна докачка страницы (DeepMind, Hugging Face, Mistral, OpenAI).
+    """Если в фиде мало текста — одна докачка страницы (PAGE_FETCH_SOURCES).
     Возвращает ошибку или None."""
     if len(m["body"]) >= MIN_BODY_CHARS:
         return None

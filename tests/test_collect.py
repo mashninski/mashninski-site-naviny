@@ -390,3 +390,91 @@ def test_actions_warning_only_in_actions_and_escaped(db, monkeypatch, capsys):
     run(db, monkeypatch, [BROKEN, TECHCRUNCH])
     warnings = [l for l in capsys.readouterr().out.splitlines() if l.startswith("::warning::")]
     assert len(warnings) == 1 and warnings[0].startswith("::warning::ПРОПУЩЕН источник broken — ")
+
+
+# ---------- аудит полноты, 23.10.2026 ----------
+
+def listing_html(n: int) -> bytes:
+    """Страница-рубрика Anthropic: n ссылок на разные статьи /news/."""
+    links = "".join(f'<a href="/news/post-{i}">Post {i}</a><p>Oct {i % 28 + 1}, 2026</p>' for i in range(n))
+    return (f'<html><head><meta property="og:title" content="Announcements"></head>'
+            f'<body><main><p>The latest announcements from our team, in one place for you.</p>{links}'
+            f'</main></body></html>').encode()
+
+
+def test_sitemap_listing_page_is_seen_but_not_news(db, monkeypatch):
+    """Рубрика /news/announcements подходит под NEWS_PATH, но это список постов:
+    коллектор пишет её виденной (stale) и дальше не отдаёт — иначе повтор
+    последней новости рубрики (2bf37b91, аудит 23.10.2026). Обычная статья
+    с парой ссылок «читайте также» — новость, как раньше."""
+    hub = "https://www.anthropic.com/news/announcements"
+    extra = f"<url><loc>{hub}</loc><lastmod>2026-09-24T12:00:00.000Z</lastmod></url></urlset>".encode()
+    monkeypatch.setitem(ROUTES, hub, "article.html")
+    net = FakeNet(patch={"https://www.anthropic.com/sitemap-pages.xml": lambda d: d.replace(b"</urlset>", extra),
+                         hub: lambda d: listing_html(20)})
+    res, net = run(db, monkeypatch, [ANTHROPIC], net)
+
+    assert hub in net.calls
+    assert "Announcements" not in titles(res)
+    assert titles(res)  # статья claude-chat-and-cowork на месте
+    status = db.execute("SELECT status FROM seen WHERE url = ?", (collect.clean_url(hub),)).fetchone()
+    assert status == ("stale",)
+    # Во второй прогон рубрика уже виденная: страницу не качаем снова
+    res2, net2 = run(db, monkeypatch, [ANTHROPIC], FakeNet(patch=net.patch))
+    assert hub not in net2.calls
+
+
+def test_is_listing_threshold():
+    assert collect.is_listing(listing_html(collect.LISTING_MIN_LINKS))
+    assert not collect.is_listing(listing_html(6))
+    assert not collect.is_listing((FIX / "article.html").read_bytes())
+
+
+def test_sitemap_source_with_own_path_claude_com(db, monkeypatch):
+    """claude.com (с 23.10.2026): статьи — /resources/articles/<slug>; переводы
+    (/de/…), цены и прочее — не статьи. Шаблон — поле path источника."""
+    src = next(s for s in collect.SOURCES if s["id"] == "claude")
+    assert src["kind"] == "sitemap" and "claude" in collect.VENDORS
+    sm = "https://claude.com/sitemap.xml"
+    art = "https://claude.com/resources/articles/claude-duet"
+    xml = ('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f"<url><loc>{art}</loc></url>"
+           "<url><loc>https://claude.com/de/resources/articles/claude-duet</loc></url>"
+           "<url><loc>https://claude.com/pricing</loc></url>"
+           "<url><loc>https://claude.com/resources/articles</loc></url></urlset>").encode()
+    monkeypatch.setitem(ROUTES, sm, "sitemap_news.xml")
+    monkeypatch.setitem(ROUTES, art, "article.html")
+    res, net = run(db, monkeypatch, [dict(src, url=sm)], FakeNet(patch={sm: lambda d: xml}))
+    assert [u for u in net.calls if u != sm] == [art]
+    assert [it.source for it in res.new] == ["claude"]
+
+
+def test_sponsored_feed_entry_is_seen_but_not_news(db, monkeypatch):
+    """Запись с тегом sponsored (так MIT Technology Review помечает Insights
+    и тексты партнёров) — не новость: stale, в выдачу не идёт."""
+    net = FakeNet(patch={ARS["url"]: lambda d: d.replace(
+        b"<category><![CDATA[AI]]></category>",
+        b"<category><![CDATA[AI]]></category><category><![CDATA[sponsored]]></category>", 1)})
+    res, _ = run(db, monkeypatch, [ARS], net)
+    assert "OpenAI's GPT-6 Sol and Luna arrive with lower prices" not in titles(res)
+    assert "Judge dismisses antitrust lawsuits over AI search answers" in titles(res)
+    status = db.execute("SELECT status FROM seen WHERE title = ?",
+                        ("OpenAI's GPT-6 Sol and Luna arrive with lower prices",)).fetchone()
+    assert status == ("stale",)
+
+
+def test_new_sources_from_audit():
+    """Источники по аудиту 23.10.2026: вендоры claude.com и alignment.openai.com,
+    порталы The Verge, Axios, 404 Media, SCMP. Порталы — не вендоры."""
+    ids = {s["id"] for s in collect.SOURCES}
+    assert {"claude", "openai-alignment", "verge", "axios", "404media", "scmp"} <= ids
+    assert len(ids) == len(collect.SOURCES)
+    assert {"verge", "axios", "404media", "scmp"}.isdisjoint(collect.VENDORS)
+
+
+def test_double_escaped_title_is_unescaped(db, monkeypatch):
+    """The Verge кодирует сущности в заголовке дважды (&amp;#8217;)."""
+    net = FakeNet(patch={ARS["url"]: lambda d: d.replace(
+        b"<title>OpenAI's GPT-6 Sol", b"<title>OpenAI&amp;#8217;s GPT-6 Sol", 1)})
+    res, _ = run(db, monkeypatch, [ARS], net)
+    assert "OpenAI’s GPT-6 Sol and Luna arrive with lower prices" in titles(res)

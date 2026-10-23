@@ -3,7 +3,7 @@
 Коллектор новостей об ИИ для раздела mashninski.com/naviny — этап 3 плана.
 
 Что делает за один прогон:
-  1. скачивает 9 RSS/Atom-фидов и sitemap Anthropic (у него нет RSS);
+  1. скачивает RSS/Atom-фиды и sitemap Anthropic и claude.com (у них нет RSS);
   2. приводит всё к виду {source, url, published_at, title, body, hash};
   3. отбрасывает уже виденное — по нормализованному URL, против data/state.sqlite;
   4. отбрасывает старше MAX_AGE_DAYS — в фидах OpenAI и Hugging Face лежит весь
@@ -24,6 +24,7 @@
 import argparse
 import calendar
 import hashlib
+import html as htmllib
 import json
 import logging
 import os
@@ -71,17 +72,43 @@ SOURCES = [
     # берётся со страницы перед генерацией (pipeline.PAGE_FETCH_SOURCES).
     # Фид отдаёт весь архив с 2023 года — старое отсекает MAX_AGE_DAYS
     {"id": "mistral",    "kind": "rss",     "url": "https://mistral.ai/rss.xml"},
+    # Добавлены 23.10.2026 по аудиту полноты ленты (сайт:
+    # claude/ai-news-samples/2026-10-23-audit/report.md; журнал сайта того же
+    # дня). Все проверены probe_feeds.py честным User-Agent: 200, фид свежий.
+    # Вендор: продуктовые статьи Anthropic живут на claude.com, а не на
+    # anthropic.com (там был Claude Duet). Sitemap без lastmod — первые прогоны
+    # докачают архив по PAGE_FETCH_LIMIT страниц, старое уйдёт в stale по дате
+    # со страницы. robots.txt ничего не закрывает
+    {"id": "claude",     "kind": "sitemap", "url": "https://claude.com/sitemap.xml",
+     "path": r"^/resources/articles/[^/]+$"},
+    # Вендор: отчёты OpenAI о рассогласовании и инцидентах агентов — отдельный
+    # сайт, в OpenAI News их нет. В фиде анонс ~100 знаков — текст со страницы
+    # (pipeline.PAGE_FETCH_SOURCES). robots.txt — 404, ограничений нет
+    {"id": "openai-alignment", "kind": "rss", "url": "https://alignment.openai.com/rss.xml"},
+    # Порталы. Закрывают то, чего у нас не было вовсе: политику, суды, деньги,
+    # Китай. В фиде The Verge — начало статьи ~690 знаков, SCMP ~500, Axios
+    # и 404 Media — текст целиком. Axios и 404 Media пишут не только об ИИ —
+    # чужое отсекает triage (is_ai = false). Страницы порталов не качаем.
+    # The Verge в robots.txt поимённо закрыт для anthropic-ai, наш бот не назван —
+    # прецедент Ars Technica: фид читаем, страницы нет
+    {"id": "verge",      "kind": "rss",     "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"},
+    {"id": "axios",      "kind": "rss",     "url": "https://www.axios.com/feeds/feed.rss"},
+    {"id": "404media",   "kind": "rss",     "url": "https://www.404media.co/rss/"},
+    {"id": "scmp",       "kind": "rss",     "url": "https://www.scmp.com/rss/320663/feed"},
     # Остальные кандидаты из спеки, §2, проверены probe_feeds.py 03.10.2026 —
     # разбор в журнале сайта того же числа и в спеке, §2:
     # - Microsoft AI — blogs.microsoft.com/ai/feed/ 410, microsoft.ai/feed/ — фид
     #   без единой записи; Meta AI — оба адреса 404, на странице блога ссылки
     #   на фид нет.
+    # 23.10.2026 не взяты: CNBC (в записи 70–120 знаков), Wired (110–170),
+    # Techmeme (заголовок и ~300 знаков), Rest of World (~180) — карточки
+    # выходили бы пустыми, как у TechCrunch; у DeepSeek фида нет.
     # Новый кандидат — сначала python probe_feeds.py
 ]
 
 # Блоги самих компаний. В кластере основным становится материал отсюда:
 # это первоисточник, портал его пересказывает.
-VENDORS = {"openai", "deepmind", "huggingface", "anthropic", "mistral"}
+VENDORS = {"openai", "deepmind", "huggingface", "anthropic", "mistral", "claude", "openai-alignment"}
 
 MAX_AGE_DAYS = 7              # старше — пишем в состояние как виденное, дальше не отдаём
 
@@ -90,6 +117,18 @@ MAX_AGE_DAYS = 7              # старше — пишем в состояни�
 # добавлены 12.10.2026 решением автора (журнал сайта): до того исследования
 # Anthropic в ленту не попадали вовсе. /legal, /careers и прочее — не статьи
 NEWS_PATH = re.compile(r"^/(news|research|engineering)/[^/]+$")
+# Под тот же шаблон попадают и рубрики — /news/announcements, /news/policy,
+# /news/safeguards и ещё семь: страница-список свежих постов. Коллектор брал
+# их за статьи, и выходили повторы последней новости рубрики (2bf37b91 —
+# второй Haiku 5.5 через 11 дней; аудит 23.10.2026). Отличие на живых
+# страницах: у рубрики 20+ ссылок на статьи того же раздела, у статьи — 3–6
+# (claude.com — 4). Порог с запасом в обе стороны
+LISTING_MIN_LINKS = 12
+# Метки рекламных материалов в тегах записи фида. У MIT Technology Review
+# так помечены тексты Insights и партнёров («Provided by HPE» и т. п.):
+# 8 таких карточек за 03–22.10.2026 прошли triage, хотя промпт относит
+# «спонсарскія тэксты» к важности 1 (аудит 23.10.2026)
+SPONSORED_TAGS = {"sponsored", "partner content", "paid content", "paid post"}
 SITEMAP_MAX_DEPTH = 2         # sitemap index → вложенные sitemap, глубже не ходим
 PAGE_FETCH_LIMIT = 15         # страниц за прогон; не скачанные подождут следующего
 BODY_PARAGRAPHS = 12          # сколько абзацев статьи брать в body
@@ -123,6 +162,9 @@ class Item:
     body: str
     hash: str = ""
     duplicates: list = field(default_factory=list)  # повторы из других источников
+    # Причина не отдавать дальше («спонсарскі», «рубрыка»): такой материал
+    # пишется в состояние как stale — виденный, но не новость
+    skip: str = ""
 
     def __post_init__(self):
         if not self.hash:
@@ -229,7 +271,9 @@ def fetch_rss(source: dict, is_seen, cutoff: datetime) -> list[Item]:
 
     items = []
     for e in feed.entries:
-        link, title = e.get("link"), (e.get("title") or "").strip()
+        # Заголовок раскодируем ещё раз: The Verge кодирует сущности дважды,
+        # и feedparser отдаёт «Meta&#8217;s» вместо «Meta’s»
+        link, title = e.get("link"), htmllib.unescape(e.get("title") or "").strip()
         if not link or not title:
             continue
         try:
@@ -238,7 +282,9 @@ def fetch_rss(source: dict, is_seen, cutoff: datetime) -> list[Item]:
             # content:encoded (или atom content), если есть, — он полнее summary
             content = e.get("content") or []
             body_html = content[0].get("value", "") if content else e.get("summary", "")
-            items.append(Item(source["id"], clean_url(link), published, title, html_to_text(body_html)))
+            tags = {(t.get("term") or "").strip().lower() for t in e.get("tags") or []}
+            items.append(Item(source["id"], clean_url(link), published, title, html_to_text(body_html),
+                              skip="спонсарскі" if tags & SPONSORED_TAGS else ""))
         except Exception as ex:
             # Одна кривая запись (ссылка «http://[…», дата за пределами календаря)
             # не должна уносить с собой весь источник
@@ -321,17 +367,27 @@ def parse_article(html: bytes, max_paragraphs: int = BODY_PARAGRAPHS) -> tuple[s
     return title, "\n\n".join(paras), published
 
 
+def is_listing(html: bytes, path: re.Pattern = NEWS_PATH) -> bool:
+    """Страница-рубрика, а не статья: на ней LISTING_MIN_LINKS и больше
+    разных ссылок на статьи того же вида (шаблон path)."""
+    soup = BeautifulSoup(html, "html.parser")
+    links = {urlsplit(a["href"]).path.rstrip("/") for a in soup.find_all("a", href=True)}
+    return sum(1 for p in links if path.match(p)) >= LISTING_MIN_LINKS
+
+
 def fetch_sitemap(source: dict, is_seen, cutoff: datetime) -> list[Item]:
     """Новое — это URL, которого не было в прошлых прогонах, а не свежий lastmod:
     lastmod меняется и при правке старой статьи. lastmod здесь служит только
     дешёвым фильтром, чтобы не качать страницы заведомо старых статей."""
     base = urlsplit(source["url"])
+    # Какие адреса — статьи: у Anthropic NEWS_PATH, у claude.com свой шаблон
+    path = re.compile(source["path"]) if source.get("path") else NEWS_PATH
 
     fresh, stale = [], []
     for loc, lastmod in sitemap_urls(source["url"]):
         try:
             parts = urlsplit(loc)
-            if parts.netloc != base.netloc or not NEWS_PATH.match(parts.path.rstrip("/")):
+            if parts.netloc != base.netloc or not path.match(parts.path.rstrip("/")):
                 continue
             url = clean_url(loc)
         except ValueError as ex:
@@ -356,7 +412,9 @@ def fetch_sitemap(source: dict, is_seen, cutoff: datetime) -> list[Item]:
     items = []
     for url, mod in fresh[:PAGE_FETCH_LIMIT]:
         try:
-            title, body, published = parse_article(fetch(url))
+            page = fetch(url)
+            title, body, published = parse_article(page)
+            listing = is_listing(page, path)
         except Exception as ex:
             # Не записываем в виденное — попробуем в следующий прогон
             log.warning("%s: не скачалась страница %s: %s", source["id"], url, ex)
@@ -364,7 +422,8 @@ def fetch_sitemap(source: dict, is_seen, cutoff: datetime) -> list[Item]:
         if not title:
             log.warning("%s: нет заголовка на странице %s, пропускаю", source["id"], url)
             continue
-        items.append(Item(source["id"], url, published or (iso(mod) if mod else None), title, body))
+        items.append(Item(source["id"], url, published or (iso(mod) if mod else None), title, body,
+                          skip="рубрыка" if listing else ""))
     return items + stale
 
 
@@ -579,7 +638,11 @@ def collect(db: sqlite3.Connection, sources=SOURCES, now: datetime | None = None
             continue
         taken.add(it.hash)
         dt = parse_iso(it.published_at)
-        (stale if dt and dt < cutoff else fresh).append(it)
+        if it.skip:
+            # Спонсорский текст или рубрика — виденное, но не новость: в состояние
+            # как stale (схему ради нового статуса не трогаем), дальше не идёт
+            log.info("%s: не навіна (%s) — %s", it.source, it.skip, it.title or it.url)
+        (stale if it.skip or (dt and dt < cutoff) else fresh).append(it)
 
     # Самый старый свежий материал может склеиться с отданным ещё на окно раньше
     known = load_known(db, cutoff - timedelta(hours=CLUSTER_WINDOW_HOURS))

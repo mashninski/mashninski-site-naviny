@@ -11,14 +11,16 @@
 
 ```
 стужкі і sitemap  →  collect.py  →  pipeline.py  →  publish.py  →  pull request у сайт
-  10 крыніц          збор,          адбор, пераказ,   карткі        рэўю і зліццё =
+  16 крыніц          збор,          адбор, пераказ,   карткі        рэўю і зліццё =
                      дублі          праверка мовы     ў JSON        публікацыя
 ```
 
-1. **Збор** (`collect.py`). Чытае RSS/Atom-стужкі OpenAI, Google DeepMind, Hugging Face,
-   Mistral, TechCrunch, VentureBeat, MIT Technology Review, Ars Technica, Simon Willison
-   і sitemap Anthropic. Прыводзіць запісы да агульнага выгляду, адкідае ўжо бачанае
-   і склейвае адну навіну з розных крыніц у адну. Збой адной крыніцы не спыняе астатнія.
+1. **Збор** (`collect.py`). Чытае RSS/Atom-стужкі OpenAI (навіны і alignment.openai.com),
+   Google DeepMind, Hugging Face, Mistral, TechCrunch, VentureBeat, MIT Technology Review,
+   Ars Technica, The Verge, Axios, 404 Media, South China Morning Post, Simon Willison
+   і sitemap Anthropic і claude.com. Прыводзіць запісы да агульнага выгляду, адкідае ўжо
+   бачанае, спонсарскія тэксты і старонкі-рубрыкі і склейвае адну навіну з розных крыніц
+   у адну. Збой адной крыніцы не спыняе астатнія.
 2. **Пайплайн** (`pipeline.py`). Адбор важнага — Claude Haiku, пераказ па-беларуску —
    Claude Sonnet. Далей лінтэр шукае русізмы і калькі (`lint.py`), пазначаныя сказы
    ідуць на выпраўленне. Усе выклікі мадэляў — праз Batch API, з месячным бюджэтам

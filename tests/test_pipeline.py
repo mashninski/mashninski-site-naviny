@@ -984,3 +984,10 @@ def test_openai_page_is_fetched_and_link_hints_dropped():
             "<p>Short.</p></main></body></html>")
     _, body, _ = collect.parse_article(html.encode("utf-8"), max_paragraphs=12)
     assert body == "We have been consulting with the Institute for Advanced Study to develop best practices."
+
+
+def test_openai_alignment_fetches_page():
+    """alignment.openai.com (с 23.10.2026): в фиде анонс ~100 знаков —
+    текст со страницы, как у OpenAI News."""
+    assert "openai-alignment" in pipeline.PAGE_FETCH_SOURCES
+    assert "openai-alignment" in collect.VENDORS
