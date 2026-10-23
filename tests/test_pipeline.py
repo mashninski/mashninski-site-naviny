@@ -652,14 +652,14 @@ def test_monthly_budget_stops_new_batches_but_collects_ready(tmp_path, site, mon
     monkeypatch.setattr(pipeline, "CARDS_DIR", tmp_path / "cards")
     db = collect.open_state(tmp_path / "state.sqlite")
     past_batch(db, "sept", "generate", 10, "2026-09-25T12:00:00Z", 100.0)   # прошлы месяц не лічыцца
-    past_batch(db, "oct", "generate", 10, "2026-10-01T12:00:00Z", 5.0)      # 5 < 28, множителя нет
+    past_batch(db, "oct", "generate", 10, "2026-10-01T12:00:00Z", 5.0)      # 5 < 40, множителя нет
     triaged(db, 3)
     client = fake_client(answers)
     res = pipeline.Resources(site, "narkamauka")
     pipeline.run_once(db, client, res, now=NOW)
     assert generate_requests(client) == [3]                    # бюджет ещё есть
-    # Прошлые батчи месяца вместе — $28,20: 28,2 ≥ 28
-    db.execute("UPDATE batch SET usage = ? WHERE id = 'oct'", (json.dumps({"tokens": {}, "usd": 28.2}),))
+    # Прошлые батчи месяца вместе — $40,20: 40,2 ≥ 40
+    db.execute("UPDATE batch SET usage = ? WHERE id = 'oct'", (json.dumps({"tokens": {}, "usd": 40.2}),))
     seed_more = triaged(db, 2)
     pipeline.run_once(db, client, res, now=NOW)
     assert generate_requests(client) == [3]                    # новых батчей нет
@@ -672,8 +672,8 @@ def test_monthly_budget_stops_new_batches_but_collects_ready(tmp_path, site, mon
     assert "Бюджет месяца исчерпан" in summary.read_text(encoding="utf-8")
     b = pipeline.budget_state(db, NOW)
     assert b["exhausted"] and b["left"] == 0
-    # Бюджет из переменной: $30 — генерация снова идёт
-    monkeypatch.setenv(pipeline.BUDGET_ENV, "30")
+    # Бюджет из переменной: $45 — генерация снова идёт
+    monkeypatch.setenv(pipeline.BUDGET_ENV, "45")
     assert not pipeline.budget_state(db, NOW)["exhausted"]
     monkeypatch.setenv(pipeline.BUDGET_ENV, "восем")
     with pytest.raises(SystemExit):
@@ -687,8 +687,8 @@ def test_status_prints_month_budget_and_day(tmp_path, monkeypatch, capsys):
     past_batch(db, "b", "triage", 30, "2026-09-30T10:00:00Z", 1.0)        # верасень
     pipeline.status(db, NOW)
     out = capsys.readouterr().out
-    assert "потрачено ≈ $0.2000 (оценка ×1.0) из $28.00" in out
-    assert "осталось ≈ $27.8000" in out and "за сутки по Мінску: 4 из 40" in out
+    assert "потрачено ≈ $0.2000 (оценка ×1.0) из $40.00" in out
+    assert "осталось ≈ $39.8000" in out and "за сутки по Мінску: 4 из 40" in out
 
 
 def test_generation_takes_important_then_freshest_and_expires_stale(tmp_path, site, monkeypatch):
